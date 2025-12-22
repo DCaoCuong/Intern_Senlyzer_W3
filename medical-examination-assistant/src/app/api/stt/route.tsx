@@ -2,21 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import Groq from "groq-sdk";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const DIARIZATION_SERVICE_URL = process.env.DIARIZATION_SERVICE_URL || 'http://localhost:8001';
-
-interface DiarizationSegment {
-    start: number;
-    end: number;
-    speaker: string;
-    role?: string;
-}
-
-interface DiarizationResponse {
-    speakers: DiarizationSegment[];
-    num_speakers: number;
-    duration: number;
-    speaker_mapping?: Record<string, string>;
-}
 
 interface TranscriptSegment {
     start: number;
@@ -27,7 +12,6 @@ interface TranscriptSegment {
 interface ProcessedSegment {
     start: number;
     end: number;
-    speaker: string;
     role: string;
     raw_text: string;
     clean_text: string;
@@ -62,116 +46,115 @@ async function transcribeWithGroq(audioBlob: Blob): Promise<{ text: string; segm
 }
 
 /**
- * Gọi Python Diarization Service để phân biệt người nói
+ * Chuyển transcription segments thành format chuẩn cho LLM role detection
  */
-async function getDiarization(audioBlob: Blob): Promise<DiarizationResponse> {
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'recording.wav');
+function prepareSegmentsForRoleDetection(
+    transcription: { text: string; segments: TranscriptSegment[] }
+): { role: string; raw_text: string; start: number; end: number }[] {
 
-    const url = `${DIARIZATION_SERVICE_URL}/diarize-with-mapping`;
-    console.log(`🎤 Calling diarization service at: ${url}`);
-
-    try {
-        // Add timeout of 60 seconds for diarization
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-        const response = await fetch(url, {
-            method: 'POST',
-            body: formData,
-            signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.warn(`Diarization service error (${response.status}): ${errorText}`);
-            return { speakers: [], num_speakers: 0, duration: 0 };
-        }
-
-        const result = await response.json();
-        console.log(`Diarization success: ${result.num_speakers} speakers found`);
-        return result;
-    } catch (error) {
-        console.warn('Diarization service error:', error);
-        // Fallback: return empty diarization
-        return { speakers: [], num_speakers: 0, duration: 0 };
-    }
-}
-
-/**
- * Merge transcript segments với diarization results
- */
-function mergeTranscriptWithSpeakers(
-    transcription: { text: string; segments: TranscriptSegment[] },
-    diarization: DiarizationResponse
-): { speaker: string; role: string; raw_text: string; start: number; end: number }[] {
-
-    const results: { speaker: string; role: string; raw_text: string; start: number; end: number }[] = [];
-
-    // Nếu không có diarization, gán tất cả cho 1 speaker mặc định
-    if (diarization.speakers.length === 0) {
-        if (transcription.segments.length > 0) {
-            for (const seg of transcription.segments) {
-                results.push({
-                    speaker: 'SPEAKER_00',
-                    role: 'Người nói',
-                    raw_text: seg.text,
-                    start: seg.start,
-                    end: seg.end
-                });
-            }
-        } else if (transcription.text) {
-            results.push({
-                speaker: 'SPEAKER_00',
-                role: 'Người nói',
-                raw_text: transcription.text,
-                start: 0,
-                end: 0
-            });
-        }
-        return results;
-    }
-
-    // Nếu có diarization, match segments
-    for (const seg of transcription.segments) {
-        const segMid = (seg.start + seg.end) / 2;
-
-        // Tìm speaker segment chứa thời điểm giữa của transcript segment
-        let matchedSpeaker = diarization.speakers.find(
-            sp => sp.start <= segMid && segMid <= sp.end
-        );
-
-        // Fallback: tìm segment gần nhất
-        if (!matchedSpeaker) {
-            matchedSpeaker = diarization.speakers.reduce((closest, current) => {
-                const closestDist = Math.min(
-                    Math.abs(closest.start - segMid),
-                    Math.abs(closest.end - segMid)
-                );
-                const currentDist = Math.min(
-                    Math.abs(current.start - segMid),
-                    Math.abs(current.end - segMid)
-                );
-                return currentDist < closestDist ? current : closest;
-            }, diarization.speakers[0]);
-        }
-
-        results.push({
-            speaker: matchedSpeaker?.speaker || 'UNKNOWN',
-            role: matchedSpeaker?.role || 'Người nói',
+    if (transcription.segments.length > 0) {
+        return transcription.segments.map(seg => ({
+            role: 'Người nói', // Placeholder - LLM sẽ xác định role thực tế
             raw_text: seg.text,
             start: seg.start,
             end: seg.end
-        });
+        }));
     }
 
-    return results;
+    // Fallback nếu không có segments
+    if (transcription.text) {
+        return [{
+            role: 'Người nói',
+            raw_text: transcription.text,
+            start: 0,
+            end: 0
+        }];
+    }
+
+    return [];
+}
+
+/**
+ * Sử dụng LLM để phân tích nội dung và xác định vai trò người nói
+ * Dựa vào ngữ cảnh của câu nói để đoán ai là Bác sĩ, ai là Bệnh nhân
+ */
+async function detectSpeakerRoleByContent(
+    segments: { role: string; raw_text: string; start: number; end: number }[]
+): Promise<{ role: string; raw_text: string; start: number; end: number }[]> {
+
+    if (segments.length === 0) return segments;
+
+    // Tạo prompt với tất cả segments
+    const conversationText = segments
+        .map((seg, i) => `[${i}] "${seg.raw_text.trim()}"`)
+        .join('\n');
+
+    const prompt = `Bạn là chuyên gia phân tích hội thoại y khoa tiếng Việt.
+Dưới đây là transcript cuộc khám bệnh. Hãy xác định vai trò người nói cho từng đoạn.
+
+QUY TẮC XÁC ĐỊNH VAI TRÒ:
+- BÁC SĨ: Hỏi triệu chứng, hỏi bệnh sử, đưa ra chẩn đoán, kê đơn thuốc, hướng dẫn điều trị
+- BỆNH NHÂN: Mô tả triệu chứng ("tôi bị...", "tôi thấy..."), xưng "chào bác sĩ", trả lời câu hỏi về bản thân
+
+MANH MỐI QUAN TRỌNG:
+- Ai nói "Chào bác sĩ" → BỆNH NHÂN
+- Ai hỏi "bạn/anh/chị có triệu chứng gì?" → BÁC SĨ  
+- Ai mô tả "tôi đau...", "tôi bị..." → BỆNH NHÂN
+- Ai hỏi "có sốt không?", "uống thuốc gì chưa?" → BÁC SĨ
+
+HỘI THOẠI:
+${conversationText}
+
+Trả về CHÍNH XÁC định dạng JSON array sau, KHÔNG có text khác:
+[{"index": 0, "role": "Bác sĩ"}, {"index": 1, "role": "Bệnh nhân"}, ...]`;
+
+    try {
+        console.log('🧠 Analyzing speaker roles with LLM...');
+
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
+                { role: "user", content: prompt }
+            ],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.1,
+            max_tokens: 500
+        });
+
+        const responseText = chatCompletion.choices[0]?.message?.content || '';
+        console.log('🧠 LLM response:', responseText.substring(0, 200));
+
+        // Parse JSON response
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+            console.warn('LLM did not return valid JSON, keeping original roles');
+            return segments;
+        }
+
+        const roleAssignments: { index: number; role: string }[] = JSON.parse(jsonMatch[0]);
+
+        // Update segments với role mới từ LLM
+        const updatedSegments = segments.map((seg, i) => {
+            const assignment = roleAssignments.find(r => r.index === i);
+            if (assignment) {
+                console.log(`   [${i}] ${seg.role} → ${assignment.role}`);
+                return { ...seg, role: assignment.role };
+            }
+            return seg;
+        });
+
+        console.log('✅ LLM role detection completed');
+        return updatedSegments;
+
+    } catch (error) {
+        console.error('LLM role detection error:', error);
+        // Fallback: keep original roles
+        return segments;
+    }
 }
 
 /**
  * Sử dụng Llama 3 để sửa lỗi thuật ngữ y khoa
+ * CHỈ sửa lỗi chính tả, KHÔNG thêm nội dung mới
  */
 async function fixMedicalText(text: string): Promise<string> {
     if (!text || text.trim().length === 0) return text;
@@ -182,21 +165,35 @@ async function fixMedicalText(text: string): Promise<string> {
                 {
                     role: "system",
                     content: `Bạn là chuyên gia hiệu chỉnh văn bản y khoa tiếng Việt.
-Nhiệm vụ: Sửa lỗi chính tả, ngữ pháp và thuật ngữ y tế từ đoạn văn thô được chuyển từ giọng nói.
-Quy tắc:
-1. Giữ nguyên ý nghĩa gốc của người nói
-2. Sửa các lỗi phát âm thường gặp trong y khoa:
+
+NHIỆM VỤ: Chỉ sửa lỗi chính tả và phát âm sai trong đoạn văn được chuyển từ giọng nói.
+
+QUY TẮC BẮT BUỘC:
+1. TUYỆT ĐỐI KHÔNG thêm nội dung mới
+2. TUYỆT ĐỐI KHÔNG xóa bớt nội dung
+3. TUYỆT ĐỐI KHÔNG viết lại câu
+4. Chỉ sửa lỗi phát âm thường gặp:
    - "đau thượng vịt" → "đau thượng vị"
-   - "phải sụp" → "sốt"
+   - "bị sụp" → "bị sốt"  
    - "ăn chích" → "ăn kiêng"
-3. Chuẩn hóa thuật ngữ y tế
-4. Trả về đoạn văn đã sửa, KHÔNG thêm lời dẫn hay giải thích`
+   - "tiêu chuẩn" → "triệu chứng" (trong ngữ cảnh y khoa)
+5. Giữ nguyên số từ và ý nghĩa gốc
+6. Trả về CHÍNH XÁC đoạn văn gốc với lỗi đã sửa
+
+VÍ DỤ:
+Input: "Tôi bị đau thượng vịt và sụp từ hôm qua"
+Output: "Tôi bị đau thượng vị và sốt từ hôm qua"
+
+Input: "Xin chào bạn có những tiêu chuẩn gì"
+Output: "Xin chào, bạn có những triệu chứng gì?"
+
+KHÔNG BAO GIỜ trả về đoạn văn dài hơn đáng kể so với input.`
                 },
                 { role: "user", content: text }
             ],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.1,
-            max_tokens: 500
+            temperature: 0.05,
+            max_tokens: Math.ceil(text.length * 1.5)
         });
 
         return chatCompletion.choices[0]?.message?.content || text;
@@ -208,6 +205,7 @@ Quy tắc:
 
 /**
  * Main API Handler - Xử lý audio và trả về transcript với speaker labels
+ * Flow: Whisper STT → LLM Role Detection → Medical Text Fixer
  */
 export async function POST(req: NextRequest) {
     const formData = await req.formData();
@@ -220,14 +218,11 @@ export async function POST(req: NextRequest) {
     try {
         console.log(`📁 Received audio: ${file.size} bytes`);
 
-        // Chạy song song: STT và Diarization
-        const [transcription, diarization] = await Promise.all([
-            transcribeWithGroq(file),
-            getDiarization(file)
-        ]);
-
+        // Step 1: Whisper STT - Chuyển audio thành text
+        console.log('🎤 Running Whisper STT...');
+        const transcription = await transcribeWithGroq(file);
         console.log(`📝 Transcription: ${transcription.text.substring(0, 100)}...`);
-        console.log(`🎤 Diarization: ${diarization.num_speakers} speakers found`);
+        console.log(`📊 Segments count: ${transcription.segments.length}`);
 
         // Nếu không có text, trả về empty
         if (!transcription.text || transcription.text.trim().length === 0) {
@@ -239,23 +234,29 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        // Merge transcript với speakers
-        const mergedSegments = mergeTranscriptWithSpeakers(transcription, diarization);
+        // Step 2: Prepare segments for role detection
+        const preparedSegments = prepareSegmentsForRoleDetection(transcription);
+        console.log(`🔗 Prepared segments: ${preparedSegments.length}`);
 
-        // Sửa lỗi y khoa cho từng segment
+        // Step 3: LLM Role Detection - Phân tích nội dung để xác định Bác sĩ/Bệnh nhân
+        const segmentsWithRoles = await detectSpeakerRoleByContent(preparedSegments);
+
+        // Step 4: Medical Text Fixer - Sửa lỗi thuật ngữ y khoa
+        console.log('💊 Running Medical Text Fixer...');
         const processedSegments: ProcessedSegment[] = await Promise.all(
-            mergedSegments.map(async (seg) => ({
+            segmentsWithRoles.map(async (seg) => ({
                 ...seg,
                 clean_text: await fixMedicalText(seg.raw_text)
             }))
         );
 
+        console.log('✅ Processing complete!');
+
         return NextResponse.json({
             success: true,
             segments: processedSegments,
             raw_text: transcription.text,
-            num_speakers: diarization.num_speakers,
-            speaker_mapping: diarization.speaker_mapping || {}
+            num_speakers: 2 // Assumed 2 speakers (Doctor + Patient)
         });
 
     } catch (error) {
@@ -271,25 +272,13 @@ export async function POST(req: NextRequest) {
  * Health check endpoint
  */
 export async function GET() {
-    // Check diarization service health
-    let diarizationStatus = 'unknown';
-    try {
-        const response = await fetch(`${DIARIZATION_SERVICE_URL}/health`);
-        if (response.ok) {
-            const data = await response.json();
-            diarizationStatus = data.model_loaded ? 'ready' : 'loading';
-        } else {
-            diarizationStatus = 'unavailable';
-        }
-    } catch {
-        diarizationStatus = 'unavailable';
-    }
-
     return NextResponse.json({
         status: 'ok',
         services: {
             groq_stt: process.env.GROQ_API_KEY ? 'configured' : 'missing_key',
-            diarization: diarizationStatus
-        }
+            llm_role_detection: 'ready',
+            medical_fixer: 'ready'
+        },
+        note: 'Diarization removed - using LLM Context Analysis for speaker role detection'
     });
 }

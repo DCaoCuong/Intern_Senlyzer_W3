@@ -4,7 +4,6 @@ import { useState, useRef, useCallback } from 'react';
 interface TranscriptSegment {
   start: number;
   end: number;
-  speaker: string;
   role: string;
   raw_text: string;
   clean_text: string;
@@ -15,7 +14,6 @@ interface STTResponse {
   segments: TranscriptSegment[];
   raw_text: string;
   num_speakers: number;
-  speaker_mapping: Record<string, string>;
 }
 
 export default function STTPage() {
@@ -34,10 +32,8 @@ export default function STTPage() {
       const res = await fetch('/api/stt');
       const data = await res.json();
 
-      if (data.services?.diarization === 'ready' && data.services?.groq_stt === 'configured') {
+      if (data.services?.groq_stt === 'configured') {
         setServiceStatus('ready');
-      } else if (data.services?.groq_stt === 'configured') {
-        setServiceStatus('partial'); // STT works but diarization might not
       } else {
         setServiceStatus('error');
       }
@@ -125,40 +121,45 @@ export default function STTPage() {
     }
   };
 
-  // Get speaker style based on role
-  const getSpeakerStyle = (role: string, speaker: string) => {
-    if (role === 'Bác sĩ' || speaker.includes('SPEAKER_00')) {
+  // Get speaker style based on LLM-detected role
+  const getSpeakerStyle = (role: string) => {
+    // Normalize role for comparison
+    const normalizedRole = role.toLowerCase().trim();
+
+    if (normalizedRole.includes('bác sĩ') || normalizedRole === 'doctor') {
       return {
         label: '👨‍⚕️ Bác sĩ',
-        bgColor: 'bg-blue-50',
+        bgColor: 'bg-gradient-to-r from-blue-50 to-indigo-50',
         borderColor: 'border-blue-500',
         textColor: 'text-blue-800',
-        labelBg: 'bg-blue-100'
+        labelBg: 'bg-blue-100',
+        icon: '🩺'
       };
-    } else if (role === 'Bệnh nhân' || speaker.includes('SPEAKER_01')) {
+    } else if (normalizedRole.includes('bệnh nhân') || normalizedRole === 'patient') {
       return {
         label: '🧑 Bệnh nhân',
-        bgColor: 'bg-green-50',
+        bgColor: 'bg-gradient-to-r from-green-50 to-emerald-50',
         borderColor: 'border-green-500',
         textColor: 'text-green-800',
-        labelBg: 'bg-green-100'
+        labelBg: 'bg-green-100',
+        icon: '💬'
       };
     }
+    // Default for unknown roles
     return {
-      label: '❓ ' + role,
+      label: '💬 ' + role,
       bgColor: 'bg-gray-50',
       borderColor: 'border-gray-400',
       textColor: 'text-gray-700',
-      labelBg: 'bg-gray-100'
+      labelBg: 'bg-gray-100',
+      icon: '💬'
     };
   };
 
   const getStatusIndicator = () => {
     switch (serviceStatus) {
       case 'ready':
-        return { color: 'bg-green-500', text: 'Tất cả dịch vụ sẵn sàng (STT + Diarization)' };
-      case 'partial':
-        return { color: 'bg-yellow-500', text: 'STT sẵn sàng (Diarization chưa khởi động)' };
+        return { color: 'bg-green-500', text: 'AI Services Ready (Whisper STT + LLM)' };
       case 'error':
         return { color: 'bg-red-500', text: 'Lỗi kết nối dịch vụ' };
       default:
@@ -217,7 +218,7 @@ export default function STTPage() {
               className="bg-gradient-to-r from-gray-700 to-gray-900 text-white px-8 py-4 rounded-2xl hover:from-gray-800 hover:to-black transition-all shadow-lg hover:shadow-xl flex items-center gap-3 font-medium"
             >
               <span className="w-4 h-4 bg-red-500 rounded-sm"></span>
-              Dừng & Phân tích (Groq AI + Pyannote)
+              Dừng & Phân tích (Groq AI)
             </button>
           )}
 
@@ -239,7 +240,7 @@ export default function STTPage() {
               <div>
                 <p className="font-medium text-blue-700">MEA đang xử lý...</p>
                 <p className="text-sm text-gray-500">
-                  Whisper STT → Speaker Diarization → Medical Fixer
+                  Whisper STT → LLM Role Detection → Medical Fixer
                 </p>
               </div>
             </div>
@@ -270,7 +271,7 @@ export default function STTPage() {
               </div>
             ) : (
               transcripts.map((segment, idx) => {
-                const style = getSpeakerStyle(segment.role, segment.speaker);
+                const style = getSpeakerStyle(segment.role);
                 return (
                   <div
                     key={idx}
@@ -309,7 +310,7 @@ export default function STTPage() {
 
         {/* Footer */}
         <footer className="mt-8 text-center text-sm text-gray-400">
-          <p>Powered by Groq Whisper + Pyannote + Llama 3</p>
+          <p>Powered by Groq Whisper + Llama 3</p>
         </footer>
       </div>
     </div>
