@@ -1,0 +1,6 @@
+{
+    "buildCommand": "npm install && npx drizzle-kit push && npm run build",
+    "installCommand": "npm install --legacy-peer-deps",
+    "framework": "nextjs",
+    "outputDirectory": ".next"
+}
