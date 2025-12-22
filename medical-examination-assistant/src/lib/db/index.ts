@@ -17,7 +17,24 @@ const createDb = () => {
     try {
         const Database = require('better-sqlite3');
         const sqlite = new Database(DB_PATH);
-        return drizzle(sqlite, { schema });
+        const dbInstance = drizzle(sqlite, { schema });
+
+        // Auto-create tables if they don't exist (for fresh Vercel deployments)
+        // This replaces the need for drizzle-kit push
+        sqlite.exec(`
+            CREATE TABLE IF NOT EXISTS comparison_records (
+                id TEXT PRIMARY KEY,
+                timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                ai_results TEXT NOT NULL,
+                doctor_results TEXT NOT NULL,
+                comparison TEXT NOT NULL,
+                match_score REAL NOT NULL,
+                case_id TEXT
+            )
+        `);
+
+        console.log('✅ Database initialized successfully');
+        return dbInstance;
     } catch (error) {
         console.error("Failed to initialize database:", error);
         throw error;
