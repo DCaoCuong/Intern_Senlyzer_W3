@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+import { patients } from './schema-patient';
 
 // Session Management Schema
 
@@ -7,13 +8,17 @@ export const examinationSessions = sqliteTable('examination_sessions', {
     // Primary Key
     id: text('id').primaryKey(), // Format: sess_<uuid>
 
+    // Patient Link (Foreign Key)
+    patientId: text('patient_id')
+        .notNull()
+        .references(() => patients.id), // Link to patients table
+
+    // Visit Information
+    visitNumber: integer('visit_number').notNull(), // Lần khám thứ mấy (1, 2, 3...)
+    chiefComplaint: text('chief_complaint'), // Lý do khám lần này
+
     // HIS System Integration
     visitId: text('visit_id'), // ID from external HIS System (optional)
-
-    // Patient Information
-    patientName: text('patient_name').notNull(),
-    patientInfo: text('patient_info', { mode: 'json' }), // {age, gender, address, etc.}
-    medicalHistory: text('medical_history'), // Tiền sử bệnh
 
     // Session Status
     status: text('status', { enum: ['active', 'completed', 'cancelled'] })
