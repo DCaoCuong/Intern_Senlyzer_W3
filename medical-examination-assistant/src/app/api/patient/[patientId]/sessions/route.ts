@@ -4,10 +4,10 @@ import { eq, desc } from 'drizzle-orm';
 
 export async function GET(
     req: NextRequest,
-    { params }: { params: { patientId: string } }
+    context: { params: Promise<{ patientId: string }> }
 ) {
     try {
-        const { patientId } = params;
+        const { patientId } = await context.params;
 
         // Get all sessions for this patient
         const sessions = await db

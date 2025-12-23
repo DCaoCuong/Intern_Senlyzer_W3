@@ -3,10 +3,10 @@ import { getPatientById } from '@/lib/services/patientService';
 
 export async function GET(
     req: NextRequest,
-    { params }: { params: { patientId: string } }
+    context: { params: Promise<{ patientId: string }> }
 ) {
     try {
-        const { patientId } = params;
+        const { patientId } = await context.params;
 
         const patient = await getPatientById(patientId);
 
