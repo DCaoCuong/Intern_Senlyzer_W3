@@ -1,48 +1,23 @@
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import path from 'path';
+import Database from 'better-sqlite3';
 import * as schema from './schema';
-import fs from 'fs';
+import * as sessionSchema from './schema-session';
+import path from 'path';
 
-// Database file path
-const DB_DIR = path.join(process.cwd(), 'data', 'db');
-const DB_PATH = path.join(DB_DIR, 'medical_assistant.db');
+// Create data directory path
+const dataDir = path.join(process.cwd(), 'data', 'db');
+const dbPath = path.join(dataDir, 'medical_assistant.db');
 
-// Ensure directory exists
-if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
-}
+// Initialize SQLite database
+const sqlite = new Database(dbPath);
 
-// Lazy initialization function
-const createDb = () => {
-    try {
-        const Database = require('better-sqlite3');
-        const sqlite = new Database(DB_PATH);
-        const dbInstance = drizzle(sqlite, { schema });
-
-        // Auto-create tables if they don't exist (for fresh Vercel deployments)
-        // This replaces the need for drizzle-kit push
-        sqlite.exec(`
-            CREATE TABLE IF NOT EXISTS comparison_records (
-                id TEXT PRIMARY KEY,
-                timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-                ai_results TEXT NOT NULL,
-                doctor_results TEXT NOT NULL,
-                comparison TEXT NOT NULL,
-                match_score REAL NOT NULL,
-                case_id TEXT
-            )
-        `);
-
-        console.log('✅ Database initialized successfully');
-        return dbInstance;
-    } catch (error) {
-        console.error("Failed to initialize database:", error);
-        throw error;
+// Create Drizzle ORM instance with all schemas
+export const db = drizzle(sqlite, {
+    schema: {
+        ...schema,
+        ...sessionSchema,
     }
-};
+});
 
-// Singleton instance
-export const db = createDb();
-
-// Export everything from schema for convenience
-export * from './schema';
+// Export all schemas for type reference
+export { schema, sessionSchema };

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, comparisonRecords } from "@/lib/db"; // Index exports schema
+import { db } from "@/lib/db";
+import { comparisonRecords } from "@/lib/db/schema";
 import { compareMedicalResults, SoapNote } from "@/lib/agents/comparison";
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { aiResults, doctorResults } = body;
+        const { sessionId, medicalRecordId, aiResults, doctorResults } = body;
 
         if (!aiResults || !doctorResults) {
             return NextResponse.json(
@@ -27,6 +28,8 @@ export async function POST(req: NextRequest) {
         await db.insert(comparisonRecords).values({
             id,
             timestamp: new Date(),
+            sessionId: sessionId || null,
+            medicalRecordId: medicalRecordId || null,
             aiResults: JSON.stringify(aiResults),
             doctorResults: JSON.stringify(doctorResults),
             comparison: JSON.stringify(analysis),

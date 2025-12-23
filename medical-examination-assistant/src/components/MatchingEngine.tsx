@@ -7,6 +7,8 @@ import { ArrowRight, Check, AlertTriangle, FileText, Activity, Calculator } from
 import clsx from 'clsx';
 
 interface MatchingEngineProps {
+    sessionId: string;
+    medicalRecordId?: string;
     aiSoap: SoapNote;
     aiIcd: string[];
     medicalAdvice: string;
@@ -21,7 +23,7 @@ interface DoctorInputForm {
     notes: string;
 }
 
-export default function MatchingEngine({ aiSoap, aiIcd, medicalAdvice }: MatchingEngineProps) {
+export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiIcd, medicalAdvice }: MatchingEngineProps) {
     const [mode, setMode] = useState<'input' | 'analyzing' | 'result'>('input');
     const [comparison, setComparison] = useState<ComparisonResult | null>(null);
 
@@ -41,6 +43,8 @@ export default function MatchingEngine({ aiSoap, aiIcd, medicalAdvice }: Matchin
         try {
             // Prepare payload
             const payload = {
+                sessionId,
+                medicalRecordId,
                 aiResults: {
                     soap: aiSoap,
                     icdCodes: aiIcd,
