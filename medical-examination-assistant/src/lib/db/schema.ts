@@ -23,4 +23,8 @@ export const comparisonRecords = sqliteTable('comparison_records', {
 
     // Optional: Patient ID or Case ID for future extension
     caseId: text('case_id'),
+
+    // Session and Medical Record tracking
+    sessionId: text('session_id'), // Links to examination_sessions
+    medicalRecordId: text('medical_record_id'), // Links to medical_records
 });

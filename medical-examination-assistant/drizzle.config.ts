@@ -3,7 +3,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
 export default {
-    schema: './src/lib/db/schema.ts',
+    schema: ['./src/lib/db/schema.ts', './src/lib/db/schema-session.ts', './src/lib/db/schema-patient.ts'],
     out: './drizzle',
     dialect: 'sqlite',
     dbCredentials: {

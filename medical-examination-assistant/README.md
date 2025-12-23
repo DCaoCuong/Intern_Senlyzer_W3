@@ -8,6 +8,34 @@
 
 ---
 
+## 📅 Kế hoạch phát triển hôm nay (23/12/2025)
+
+### 🎨 1. Cải thiện UX/UI
+- [ ] Tối ưu màu sắc, typography và animations
+- [ ] Tạo component library tái sử dụng (Button, Card, Input, Table, Modal)
+- [ ] Responsive design cho mobile và tablet
+- [ ] Refactor giao diện hiện tại với design system mới
+
+### 🔐 2. Phân quyền (Role-Based Access Control)
+- [ ] Implement authentication với NextAuth.js
+- [ ] Database schema: users, sessions tables
+- [ ] Protected routes middleware
+- [ ] 2 roles: **Admin** và **Doctor**
+
+### 👨‍💼 3. Admin Dashboard & Chức năng
+- [ ] **Layout**: Sidebar navigation, header với profile
+- [ ] **User Management**: Quản lý tài khoản doctors (CRUD operations)
+- [ ] **Analytics**: Dashboard với charts, thống kê độ chính xác AI
+- [ ] **System Monitoring**: Key metrics, API usage, health indicators
+- [ ] **Settings**: Cấu hình hệ thống, audit logs
+
+### 📊 Tiến độ
+Status: **Planning** → Implementation → Verification
+
+Chi tiết: Xem [task.md](./task.md) và [implementation_plan.md](./implementation_plan.md)
+
+---
+
 ##  Kiến trúc hệ thống
 
 ```mermaid
