@@ -5,8 +5,9 @@ dotenv.config({ path: '.env.local' });
 export default {
     schema: ['./src/lib/db/schema.ts', './src/lib/db/schema-session.ts', './src/lib/db/schema-patient.ts'],
     out: './drizzle',
-    dialect: 'sqlite',
+    dialect: 'turso',
     dbCredentials: {
-        url: 'data/db/medical_assistant.db',
+        url: process.env.TURSO_DATABASE_URL!,
+        authToken: process.env.TURSO_AUTH_TOKEN,
     },
 } satisfies Config;
