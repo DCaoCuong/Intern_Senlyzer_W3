@@ -1,7 +1,7 @@
 import { db } from '../db';
 import { examinationSessions, medicalRecords } from '../db/schema-session';
-import { patients } from '../db/schema-patient';
-import { eq, desc } from 'drizzle-orm';
+import { users } from '../db/schema-users';
+import { eq, desc, sql, and } from 'drizzle-orm';
 import { updateVisit, type MedicalPayload } from '../integrations/hisClient';
 
 // ============= Types =============
@@ -64,35 +64,34 @@ export interface MedicalRecord {
  * Create a new examination session for an existing patient
  */
 export async function createSession(input: SessionInput): Promise<Session> {
-    // Generate unique session ID
-    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // PostgreSQL will auto-generate UUID
 
-    // Get visit number for this patient
-    const existingSessions = await db
-        .select()
+    // Get visit number for this patient using count
+    const countResult = await db
+        .select({ count: sql<number>`cast(count(*) as integer)` })
         .from(examinationSessions)
         .where(eq(examinationSessions.patientId, input.patientId));
 
-    const visitNumber = existingSessions.length + 1;
+    const visitNumber = (countResult[0]?.count || 0) + 1;
 
-    const now = new Date();
-
-    // Prepare session data
+    // Prepare session data (PostgreSQL will handle timestamps)
     const sessionData = {
-        id: sessionId,
         patientId: input.patientId,
         visitNumber,
         chiefComplaint: input.chiefComplaint || null,
         visitId: input.visitId || null,
         status: 'active' as const,
-        createdAt: now,
-        updatedAt: now,
+        appointmentId: null, // Can be set later if linking to appointment
     };
 
-    // Insert into database
-    await db.insert(examinationSessions).values(sessionData);
+    // Insert into database and return
+    const result = await db.insert(examinationSessions).values(sessionData).returning();
 
-    return sessionData;
+    const session = result[0];
+    return {
+        ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled'
+    } as Session;
 }
 
 /**
@@ -105,7 +104,13 @@ export async function getSession(sessionId: string): Promise<Session | null> {
         .where(eq(examinationSessions.id, sessionId))
         .limit(1);
 
-    return results[0] || null;
+    const session = results[0];
+    if (!session) return null;
+
+    return {
+        ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled'
+    } as Session;
 }
 
 /**
@@ -115,10 +120,13 @@ export async function getSessionWithPatient(sessionId: string): Promise<SessionW
     const results = await db
         .select({
             session: examinationSessions,
-            patient: patients
+            patient: users
         })
         .from(examinationSessions)
-        .leftJoin(patients, eq(examinationSessions.patientId, patients.id))
+        .leftJoin(users, and(
+            eq(examinationSessions.patientId, users.id),
+            eq(users.role, 'patient')
+        ))
         .where(eq(examinationSessions.id, sessionId))
         .limit(1);
 
@@ -128,13 +136,14 @@ export async function getSessionWithPatient(sessionId: string): Promise<SessionW
 
     return {
         ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled',  // Type assertion for status
         patient: patient ? {
             id: patient.id,
-            displayId: patient.displayId,
+            displayId: patient.displayId || 'N/A',
             name: patient.name,
-            birthDate: patient.birthDate,
+            birthDate: patient.birthDate || null,  // Already a string (YYYY-MM-DD) from PostgreSQL DATE
             gender: patient.gender,
-            phoneNumber: patient.phoneNumber,
+            phoneNumber: patient.phone,
             medicalHistory: patient.medicalHistory
         } : {
             id: '',
@@ -211,25 +220,23 @@ export async function saveMedicalRecord(input: MedicalRecordInput): Promise<Medi
 
         return record;
     } else {
-        // Create new record
-        const recordId = `rec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Create new record (PostgreSQL will auto-generate UUID)
 
         const recordData = {
-            id: recordId,
             sessionId: input.sessionId,
             subjective: input.subjective || null,
             objective: input.objective || null,
             assessment: input.assessment || null,
             plan: input.plan || null,
             icdCodes: input.icdCodes || [],
+            diagnosis: input.assessment || null, // Duplicate for Booking compatibility
+            prescription: input.plan || null, // Duplicate for Booking compatibility
             status: input.status,
-            createdAt: now,
-            updatedAt: now,
         };
 
-        await db.insert(medicalRecords).values(recordData);
+        const result = await db.insert(medicalRecords).values(recordData).returning();
 
-        const record = recordData as MedicalRecord;
+        const record = result[0] as MedicalRecord;
 
         // If status is final, sync to HIS and update session
         if (input.status === 'final') {

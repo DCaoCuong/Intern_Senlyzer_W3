@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSession, type SessionInput } from '@/lib/services/sessionService';
-import { createPatient, forceCreatePatient, type PatientInput } from '@/lib/services/patientService';
+import { createUser, forceCreateUser, type UserInput } from '@/lib/services/userService';
 
 /**
  * POST /api/session/create
@@ -32,11 +32,12 @@ export async function POST(request: NextRequest) {
         // OLD FORMAT: patientName provided - auto-create patient first
         if (body.patientName) {
             // Step 1: Create patient from form data
-            const patientData: PatientInput = {
+            const patientData: UserInput = {
                 name: body.patientName,
+                email: `temp_${Date.now()}@placeholder.local`, // Temporary email
                 gender: body.patientInfo?.gender,
                 address: body.patientInfo?.address,
-                phoneNumber: body.patientInfo?.phoneNumber,
+                phone: body.patientInfo?.phoneNumber,
                 medicalHistory: body.medicalHistory,
                 // Calculate birthDate from age if provided
                 birthDate: body.patientInfo?.age
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
             };
 
             // Force create patient (bypass duplicate check for old flow)
-            const patient = await forceCreatePatient(patientData);
+            const patient = await forceCreateUser(patientData);
 
             // Step 2: Create session linked to patient
             const sessionInput: SessionInput = {

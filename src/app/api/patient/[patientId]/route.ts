@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPatientById, deletePatient } from '@/lib/services/patientService';
+import { getUserById, deleteUser } from '@/lib/services/userService';
 
 export async function GET(
     req: NextRequest,
@@ -8,7 +8,7 @@ export async function GET(
     try {
         const { patientId } = await context.params;
 
-        const patient = await getPatientById(patientId);
+        const patient = await getUserById(patientId);
 
         if (!patient) {
             return NextResponse.json(
@@ -19,7 +19,7 @@ export async function GET(
 
         return NextResponse.json({
             success: true,
-            patient
+            patient  // Return as "patient" for backwards compatibility
         });
 
     } catch (error) {
@@ -39,7 +39,7 @@ export async function DELETE(
         const { patientId } = await context.params;
 
         // Check if patient exists
-        const patient = await getPatientById(patientId);
+        const patient = await getUserById(patientId);
         if (!patient) {
             return NextResponse.json(
                 { success: false, message: 'Bệnh nhân không tồn tại' },
@@ -48,7 +48,7 @@ export async function DELETE(
         }
 
         // Delete patient and all associated records
-        const result = await deletePatient(patientId);
+        const result = await deleteUser(patientId);
 
         if (!result.success) {
             return NextResponse.json(

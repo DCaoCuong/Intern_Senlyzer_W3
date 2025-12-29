@@ -3,11 +3,15 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
 export default {
-    schema: ['./src/lib/db/schema.ts', './src/lib/db/schema-session.ts', './src/lib/db/schema-patient.ts'],
+    schema: [
+        './src/lib/db/schema-users.ts',
+        './src/lib/db/schema-booking.ts',
+        './src/lib/db/schema-session.ts',
+        './src/lib/db/schema.ts'
+    ],
     out: './drizzle',
-    dialect: 'turso',
+    dialect: 'postgresql',
     dbCredentials: {
-        url: process.env.TURSO_DATABASE_URL!,
-        authToken: process.env.TURSO_AUTH_TOKEN,
+        url: process.env.DATABASE_URL!,
     },
 } satisfies Config;

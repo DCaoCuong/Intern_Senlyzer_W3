@@ -3,7 +3,7 @@ import {
     createPatient,
     forceCreatePatient,
     type PatientInput
-} from '@/lib/services/patientService';
+} from '@/lib/services/userService';
 
 export async function POST(req: NextRequest) {
     try {
@@ -23,10 +23,10 @@ export async function POST(req: NextRequest) {
 
         // Force create (bypass duplicate check)
         if (force) {
-            const patient = await forceCreatePatient(patientData);
+            const user = await forceCreatePatient(patientData);
             return NextResponse.json({
                 success: true,
-                patient
+                patient: user  // Return as "patient" for backwards compatibility
             });
         }
 
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            patient: result.patient
+            patient: result.user  // Return as "patient" for backwards compatibility
         });
 
     } catch (error) {

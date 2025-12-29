@@ -1,25 +1,38 @@
-import { drizzle } from 'drizzle-orm/libsql';
-import * as schema from './schema';
-import * as sessionSchema from './schema-session';
-import * as patientSchema from './schema-patient';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import { createClient } from '@supabase/supabase-js';
 
-// Create Drizzle ORM instance with Turso connection
-export const db = drizzle({
-    connection: {
-        url: process.env.TURSO_DATABASE_URL!,
-        authToken: process.env.TURSO_AUTH_TOKEN!,
-    },
+// Import all schemas
+import * as usersSchema from './schema-users';
+import * as bookingSchema from './schema-booking';
+import * as sessionSchema from './schema-session';
+import * as comparisonSchema from './schema';
+
+// Supabase client for authentication and storage features
+export const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// PostgreSQL connection for Drizzle ORM
+const connectionString = process.env.DATABASE_URL!;
+const client = postgres(connectionString);
+
+// Create Drizzle ORM instance with PostgreSQL connection
+export const db = drizzle(client, {
     schema: {
-        ...schema,
+        ...usersSchema,
+        ...bookingSchema,
         ...sessionSchema,
-        ...patientSchema,
+        ...comparisonSchema,
     }
 });
 
 // Export all schemas for type reference
-export { schema, sessionSchema, patientSchema };
+export { usersSchema, bookingSchema, sessionSchema, comparisonSchema };
 
 // Export specific tables for convenience
-export { patients } from './schema-patient';
+export { users } from './schema-users';
+export { clinics, services, clinic_services } from './schema-booking';
 export { examinationSessions, medicalRecords } from './schema-session';
 export { comparisonRecords } from './schema';

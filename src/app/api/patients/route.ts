@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listPatients, searchPatients } from '@/lib/services/patientService';
+import { listPatients, searchPatients } from '@/lib/services/userService';
 
 export async function GET(req: NextRequest) {
     try {

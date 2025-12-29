@@ -1,5 +1,6 @@
-import { db, examinationSessions, medicalRecords, patients } from '../db';
-import { eq, gte, desc, sql } from 'drizzle-orm';
+import { db, examinationSessions, medicalRecords } from '../db';
+import { users } from '../db/schema-users';
+import { eq, gte, desc, sql, and } from 'drizzle-orm';
 
 export interface DashboardStats {
     today: {
@@ -35,7 +36,7 @@ export interface RecentSession {
 
 export interface PatientSummary {
     id: string;
-    displayId: string;
+    displayId: string | null;  // Can be null for users without patient role
     name: string;
     age: number | null;
     gender: string | null;
@@ -75,8 +76,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     // This week's new patients
     const weekNewPatients = await db
         .select()
-        .from(patients)
-        .where(gte(patients.createdAt, weekStart));
+        .from(users)
+        .where(and(gte(users.createdAt, weekStart), eq(users.role, 'patient')));
 
     // This month's sessions
     const monthSessions = await db
@@ -87,13 +88,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     // This month's new patients
     const monthNewPatients = await db
         .select()
-        .from(patients)
-        .where(gte(patients.createdAt, monthStart));
+        .from(users)
+        .where(and(gte(users.createdAt, monthStart), eq(users.role, 'patient')));
 
     // Total counts
     const totalPatientsResult = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(patients);
+        .select({ count: sql<number>`cast(count(*) as integer)` })
+        .from(users)
+        .where(eq(users.role, 'patient'));
 
     const totalSessionsResult = await db
         .select({ count: sql<number>`count(*)` })
@@ -134,11 +136,11 @@ export async function getRecentSessions(limit: number = 50, page: number = 1): P
             chiefComplaint: examinationSessions.chiefComplaint,
             status: examinationSessions.status,
             createdAt: examinationSessions.createdAt,
-            patientName: patients.name,
-            patientDisplayId: patients.displayId,
+            patientName: users.name,
+            patientDisplayId: users.displayId,
         })
         .from(examinationSessions)
-        .leftJoin(patients, eq(examinationSessions.patientId, patients.id))
+        .leftJoin(users, eq(examinationSessions.patientId, users.id))
         .orderBy(desc(examinationSessions.createdAt))
         .limit(limit)
         .offset(offset);
@@ -178,8 +180,9 @@ export async function getPatientsList(limit: number = 50, page: number = 1): Pro
     // Get all patients with pagination
     const patientsList = await db
         .select()
-        .from(patients)
-        .orderBy(desc(patients.createdAt))
+        .from(users)
+        .where(eq(users.role, 'patient'))
+        .orderBy(desc(users.createdAt))
         .limit(limit)
         .offset(offset);
 
@@ -232,3 +235,4 @@ export async function getPatientsList(limit: number = 50, page: number = 1): Pro
 
     return patientsWithSummary;
 }
+
