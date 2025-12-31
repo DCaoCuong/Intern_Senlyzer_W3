@@ -13,7 +13,7 @@ export async function GET(request: Request) {
         return NextResponse.json({
             success: true,
             stats,
-            patients, // Trả về danh sách bệnh nhân thay vì sessions
+            patients,
             pagination: {
                 page,
                 limit

@@ -20,7 +20,7 @@ export const users = pgTable('users', {
     avatarUrl: text('avatar_url'),
 
     // Patient-specific fields (from MEA)
-    displayId: varchar('display_id', { length: 50 }).unique(), // BN-2024-000001
+    displayId: text('display_id').unique(), // BN-2024-000001
     birthDate: date('birth_date'),
     gender: varchar('gender', { length: 20 }),
     address: text('address'),
